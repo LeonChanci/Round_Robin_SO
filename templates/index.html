@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Round Robin - Tabla de Quantums</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; text-align: center; }
+        
+        .config-panel { display: flex; gap: 20px; background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .form-group { flex: 1; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; color: #34495e; }
+        input { width: 100%; padding: 8px; border: 1px solid #bdc3c7; border-radius: 4px; box-sizing: border-box; }
+        
+        .process-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px; border: 1px solid #eee; border-radius: 5px; }
+        .process-name { font-weight: bold; width: 50px; color: #e67e22; }
+        
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; }
+        .btn-add { background-color: #27ae60; }
+        .btn-run { background-color: #2980b9; width: 100%; margin-top: 10px; font-size: 1.1em; }
+        
+        /* DIAGRAMA DE GANTT */
+        .gantt-wrapper { overflow-x: auto; margin-top: 30px; border: 1px solid #ccc; padding: 10px; background: white; }
+        .gantt-chart { display: flex; height: 60px; }
+        .gantt-block { display: flex; justify-content: center; align-items: center; color: white; font-size: 12px; position: relative; border-right: 1px solid white; min-width: 30px; }
+        .cpu { background-color: #3498db; }
+        .ctx { background-color: #e74c3c; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,.3) 5px, rgba(255,255,255,.3) 10px); }
+        .time-label { position: absolute; bottom: -20px; left: 0; color: #333; font-size: 10px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 30px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #34495e; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Simulador Round Robin</h1>
+    <p style="text-align:center; color: #7f8c8d;">Ingrese los valores en Quantums (excepto la llegada que es en ms).</p>
+
+    <div class="config-panel">
+        <div class="form-group">
+            <label>Tamaño del Quantum (ms):</label>
+            <input type="number" id="quantum" value="100">
+        </div>
+        <div class="form-group">
+            <label>Tiempo de Intercambio (ms):</label>
+            <input type="number" id="intercambio" value="10">
+        </div>
+    </div>
+
+    <div id="process-list"></div>
+
+    <button class="btn btn-add" onclick="addProcess()">+ Agregar Proceso</button>
+    <button class="btn btn-run" onclick="runSimulation()">CALCULAR</button>
+
+    <div id="results" style="display:none;">
+        <h3>Diagrama de Gantt</h3>
+        <div class="gantt-wrapper">
+            <div class="gantt-chart" id="gantt-container"></div>
+        </div>
+
+        <h3>Tabla de Resultados</h3>
+        <table id="results-table">
+            <thead>
+                <tr>
+                    <th>Proceso</th>
+                    <th>Llegada (ms)</th>
+                    <th>Fin (ms)</th>
+                    <th>E/S Total (ms)</th>
+                    <th>TV (Vuelta)</th>
+                    <th>W (Espera)</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div id="promedios" style="margin-top:15px; font-weight:bold; background:#fff3cd; padding:10px;"></div>
+    </div>
+</div>
+
+<script>
+    let pCount = 0;
+
+    function addProcess() {
+        const div = document.createElement('div');
+        div.className = 'process-row';
+        div.innerHTML = `
+            <span class="process-name">P${pCount}</span>
+            <div style="flex: 1;">
+                <label style="font-size:0.8em">Llegada (ms)</label>
+                <input type="number" class="llegada" value="0">
+            </div>
+            <div style="flex: 3;">
+                <label style="font-size:0.8em">Secuencia de Quantums (CPU, E/S, CPU, E/S...)</label>
+                <input type="text" class="secuencia" placeholder="Ej: 2, 2, 1 (Significa: 2 CPU, 2 ES, 1 CPU)">
+            </div>
+            <button onclick="this.parentElement.remove()" style="background:#c0392b; color:white; border:none; border-radius:3px; cursor:pointer;">X</button>
+        `;
+        document.getElementById('process-list').appendChild(div);
+        pCount++;
+    }
+
+    // Cargar ejemplo inicial similar a tu imagen
+    window.onload = () => {
+        addProcess(); // P0
+        addProcess(); // P1
+        addProcess(); // P2
+        
+        // Pre-llenar datos para que pruebes rápido (según tu imagen)
+        const inputs = document.querySelectorAll('.process-row');
+        
+        // P0: Llegada 0, Seq: 2, 2, 1, 2, 3
+        inputs[0].querySelector('.llegada').value = 0;
+        inputs[0].querySelector('.secuencia').value = "2, 2, 1, 2, 3";
+
+        // P1: Llegada 90, Seq: 3, 2, 2
+        inputs[1].querySelector('.llegada').value = 90;
+        inputs[1].querySelector('.secuencia').value = "3, 2, 2";
+
+        // P2: Llegada 240, Seq: 6
+        inputs[2].querySelector('.llegada').value = 240;
+        inputs[2].querySelector('.secuencia').value = "6";
+    };
+
+    async function runSimulation() {
+        const quantum = document.getElementById('quantum').value;
+        const intercambio = document.getElementById('intercambio').value;
+        
+        const procesos = [];
+        document.querySelectorAll('.process-row').forEach((row, idx) => {
+            const pid = row.querySelector('.process-name').innerText;
+            const llegada = row.querySelector('.llegada').value;
+            const seqText = row.querySelector('.secuencia').value;
+            
+            // Convertir "2, 2, 1" a array [2, 2, 1]
+            const secuenciaArray = seqText.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+
+            procesos.push({
+                pid: pid,
+                llegada: llegada,
+                secuencia_quantums: secuenciaArray
+            });
+        });
+
+        const res = await fetch('/simular', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ quantum, intercambio, procesos })
+        });
+        
+        const data = await res.json();
+        mostrarResultados(data);
+    }
+
+    function mostrarResultados(data) {
+        document.getElementById('results').style.display = 'block';
+        
+        // GANTT
+        const chart = document.getElementById('gantt-container');
+        chart.innerHTML = '';
+        let totalWidth = 0;
+        
+        data.gantt.forEach(bloque => {
+            const duracion = bloque.fin - bloque.inicio;
+            const div = document.createElement('div');
+            
+            // Factor de escala visual: dividir por 5 para que no sea gigante
+            const width = duracion; 
+            
+            div.className = bloque.tipo === 'CPU' ? 'gantt-block cpu' : 'gantt-block ctx';
+            div.style.flexGrow = duracion; // Usar flex-grow para proporción exacta
+            div.innerText = bloque.tipo === 'CPU' ? bloque.pid : '/';
+            div.title = `Inicio: ${bloque.inicio}, Fin: ${bloque.fin}`;
+            
+            const time = document.createElement('span');
+            time.className = 'time-label';
+            time.innerText = bloque.inicio;
+            div.appendChild(time);
+            
+            chart.appendChild(div);
+        });
+        
+        // Etiqueta final
+        const finalTime = document.createElement('div');
+        finalTime.style.position = 'relative';
+        finalTime.innerHTML = `<span style="position:absolute; bottom: -15px; font-size:10px;">${data.gantt[data.gantt.length-1].fin}</span>`;
+        chart.appendChild(finalTime);
+
+        // TABLA
+        const tbody = document.querySelector('#results-table tbody');
+        tbody.innerHTML = '';
+        data.tabla.forEach(p => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${p.pid}</td>
+                    <td>${p.llegada}</td>
+                    <td>${p.fin}</td>
+                    <td>${p.io_total}</td>
+                    <td><strong>${p.tv}</strong></td>
+                    <td><strong>${p.w}</strong></td>
+                </tr>
+            `;
+        });
+
+        document.getElementById('promedios').innerHTML = `
+            Promedio TV: ${data.promedios.tv} | Promedio W: ${data.promedios.w}
+        `;
+    }
+</script>
+
+</body>
+</html>
