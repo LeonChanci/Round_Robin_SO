@@ -125,6 +125,7 @@
 <script>
     let processCount = 0;
 
+    // Función para agregar un nuevo proceso
     function addProcess() {
         const div = document.createElement('div');
         div.className = 'process-box';
@@ -166,18 +167,26 @@
     };
 
     async function runSimulation() {
+        // 1. RECOLECCIÓN DE DATOS GENERALES
         const quantum = document.getElementById('quantum').value;
         const intercambio = document.getElementById('intercambio').value;
         const processDivs = document.querySelectorAll('.process-box');
-        
+    
         const procesos = [];
+
+        // 2. PROCESAMIENTO DE CADA PROCESO
         processDivs.forEach((div) => {
             const pid = div.querySelector('.process-id').innerText; 
             const llegada = div.querySelector('.llegada').value;
             const rafagasText = div.querySelector('.rafagas').value;
             
+            // --- LIMPIEZA DE DATOS ---
+            // 1. split(','): Corta el texto por las comas -> ["2", " 2", " 1"]
+            // 2. map(...): Convierte cada pedazo de texto a Número Entero
+            // 3. filter(...): Elimina cualquier basura que no sea un número (por si ponen letras por error)
             const secuenciaArray = rafagasText.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
 
+            // Agregamos el objeto ordenado al arreglo 'procesos'
             procesos.push({
                 pid: pid,
                 llegada: llegada,
@@ -185,52 +194,66 @@
             });
         });
 
+        // 3. COMUNICACIÓN CON EL SERVIDOR (PYTHON)
+        // 'await fetch': Envía los datos a la ruta '/simular' de tu archivo app.py
+        // Espera a que Python haga los cálculos y responda
         const response = await fetch('/simular', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ quantum, intercambio, procesos })
         });
 
+        // 4. RECIBIR Y MOSTRAR RESULTADOS
         const data = await response.json();
         renderResults(data);
     }
 
     function renderResults(data) {
+        // 1. PREPARACIÓN VISUAL
         document.getElementById('results-section').style.display = 'block';
         
-        // 1. GANTT
+        // --- BLOQUE 1: DIAGRAMA DE GANTT ---
         const ganttDiv = document.getElementById('gantt-chart');
-        ganttDiv.innerHTML = '';
+        ganttDiv.innerHTML = ''; // Limpia cualquier diagrama anterior para no duplicar
+
+        // Obtiene el tiempo final absoluto del último bloque para mostrarlo al final
         const totalDuration = data.gantt[data.gantt.length-1].fin;
         
+        // Recorremos la lista de bloques de tiempo que nos envió Python
         data.gantt.forEach(block => {
             const duration = block.fin - block.inicio;
-            if (duration === 0) return;
+            if (duration === 0) return; // Si dura 0, no dibujamos nada
             
+            // Creamos un DIV nuevo para este bloque de tiempo
             const el = document.createElement('div');
+
+            // --- LÓGICA DE ESTILOS ---
             el.className = block.tipo === 'CPU' ? 'gantt-block gantt-cpu' : 'gantt-block gantt-ctx';
-            el.style.width = block.tipo === 'CPU' ? '40px' : '30px';
+            el.style.width = block.tipo === 'CPU' ? '40px' : '30px'; // Aquí definimos el ancho visual: 40px para Procesos, 30px para Intercambios   
             el.innerText = block.tipo === 'CPU' ? block.pid : '/';
             el.title = `Inicio: ${block.inicio}, Fin: ${block.fin}`;
             
             const timeLabel = document.createElement('span');
             timeLabel.className = 'gantt-time';
             timeLabel.innerText = block.inicio;
-            el.appendChild(timeLabel);
 
+            // Insertamos la etiqueta dentro del bloque y el bloque dentro del contenedor principal
+            el.appendChild(timeLabel);
             ganttDiv.appendChild(el);
         });
         
+        // Agregamos manualmente el número del tiempo final al extremo derecho del diagrama
         const finalTime = document.createElement('div');
         finalTime.style.position = 'relative';
         finalTime.innerHTML = `<span style="position:absolute; bottom: -10px; font-size:10px; margin-left: 5px;">${totalDuration}</span>`;
         ganttDiv.appendChild(finalTime);
 
 
-        // 2. TRAZA
+        // --- BLOQUE 2: TRAZA (EVOLUCIÓN DE LA COLA) ---
         const traceDiv = document.getElementById('trace-container');
         traceDiv.innerHTML = '';
         
+        // Recorremos los pasos de la cola que calculó Python
         data.trace.forEach(item => {
             const el = document.createElement('div');
             let colorClass = 'fase-other';
@@ -240,6 +263,11 @@
             else if (item.fase === 6) colorClass = 'fase-6';
 
             el.className = `trace-item ${colorClass}`;
+
+            // Insertamos el HTML interno de la caja:
+            // Arriba: Cuánto sale (restante)
+            // Medio: Cuánto entró (actual)
+            // Abajo: Nombre del proceso
             el.innerHTML = `
                 <span class="trace-top">${item.sale}</span>
                 <span class="trace-mid">${item.entra}</span>
@@ -249,10 +277,14 @@
         });
 
 
-        // 3. TABLA
+        // --- BLOQUE 3: TABLA DE DATOS ---
         const tbody = document.querySelector('#results-table tbody');
         tbody.innerHTML = '';
+
+        // Recorremos los resultados calculados
         data.tabla.forEach(row => {
+
+            // Construimos la fila de la tabla con los datos recibidos (Llegada, Fin, TV, W)
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td><b>${row.pid}</b></td>
@@ -262,15 +294,16 @@
                 <td><strong>${row.tv}</strong></td>
                 <td><strong>${row.w}</strong></td>
             `;
-            tbody.appendChild(tr);
+            tbody.appendChild(tr); // Añadimos la fila a la tabla
         });
 
+        // --- BLOQUE 4: PROMEDIOS ---
+        // Insertamos los promedios generales al final
         document.getElementById('averages').innerHTML = `
             <strong>Tiempo Medio de Vuelta:</strong> ${data.promedios.tv} ms <br>
             <strong>Tiempo Medio de Espera:</strong> ${data.promedios.w} ms
         `;
     }
 </script>
-
 </body>
 </html>
